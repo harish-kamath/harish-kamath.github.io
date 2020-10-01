@@ -8,6 +8,8 @@
 $max-content-width: 800px;
 
 // Colors
+$old-gold-color:      #CFB53B !default;
+
 $red-color:           #FF3636 !default;
 $red-color-dark:      #B71C1C !default;
 $orange-color:        #F29105 !default;
@@ -29,7 +31,7 @@ $grey-color-light:    lighten($grey-color, 40%);
 $grey-color-dark:     darken($grey-color, 25%);
 
 /* Set theme colors *************************/
-$theme-color:         $purple-color;
+$theme-color:         $old-gold-color;
 
 $link-color:          $theme-color;
 $text-color:          #111 !default;
