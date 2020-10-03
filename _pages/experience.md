@@ -1,14 +1,14 @@
 ---
 layout: page
-title: projects
-permalink: /projects/
-description: A growing collection of your cool projects.
+permalink: /experience/
+title: experience
+description: Work I've done at some exciting companies in the past.
 nav: false
 ---
 
 <div class="projects grid">
 
-  {% assign sorted_projects = site.projects | sort: "importance" %}
+  {% assign sorted_experiences = site.experiences | sort: "year" %}
   {% for project in sorted_projects %}
   <div class="grid-item">
     {% if project.redirect %}

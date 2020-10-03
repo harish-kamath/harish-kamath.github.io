@@ -4,7 +4,7 @@
 
 title: Harish Kamath's Webpage! # the website title (if blank, full name will be used instead)
 first_name: Harish
-middle_name: K.
+middle_name:
 last_name: Kamath
 email: hkamath@gatech.edu
 description: > # the ">" symbol means to ignore newlines until "footer_text:"
@@ -57,7 +57,7 @@ google_analytics: UA-XXXXXXXXX # out your google-analytics code
 # Blog
 # -----------------------------------------------------------------------------
 
-blog_name: Exploring  # your blog must have a name for it to show up in the nav bar
+blog_name:  # your blog must have a name for it to show up in the nav bar
 blog_description: Coming soon!
 permalink: /blog/:year/:title/
 
@@ -81,6 +81,9 @@ collections:
   projects:
     output: true
     permalink: /projects/:path/
+  experiences:
+    output: true
+    permalink: /experiences/:path/
 
 news_limit: 5
 
