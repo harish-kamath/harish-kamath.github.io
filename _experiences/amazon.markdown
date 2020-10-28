@@ -1,10 +1,10 @@
 ---
 layout: page
-title: project 3
-description: a project that redirects to another website
-img: /assets/img/7.jpg
-redirect: https://unsplash.com
+title: Amazon New Businesses - Merch Collab
+description: Software Engineering Intern
+img: /assets/img/amazon.jpeg
 year: 2019
+year_prefix: May-Aug
 ---
 
 Every project has a beautiful feature showcase page.
