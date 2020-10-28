@@ -2,46 +2,34 @@
 layout: page
 permalink: /experience/
 title: experience
-description: Work I've done at some exciting companies in the past.
-nav: false
+description: Work I've done at some exciting companies.
+nav: true
 ---
+<div class="experiences">
+<ol class="explist">
 
-<div class="projects grid">
-
-  {% assign sorted_experiences = site.experiences | sort: "year" %}
-  {% for project in sorted_projects %}
-  <div class="grid-item">
-    {% if project.redirect %}
-    <a href="{{ project.redirect }}" target="_blank">
-    {% else %}
-    <a href="{{ project.url | relative_url }}">
-    {% endif %}
-      <div class="card hoverable">
-        {% if project.img %}
-        <img src="{{ project.img | relative_url }}" alt="project thumbnail">
+  {% assign sorted_experiences = site.experiences | sort: "year" | reverse %}
+  {% for exp in sorted_experiences %}
+  <li class="exp">
+      <div>
+      <h4 class="year">{{exp.year_prefix}} {{exp.year}}</h4>
+        {% if exp.img %}
+        <img src="{{ exp.img | relative_url }}" alt="project thumbnail">
         {% endif %}
-        <div class="card-body">
-          <h2 class="card-title text-lowercase">{{ project.title }}</h2>
-          <p class="card-text">{{ project.description }}</p>
-          <div class="row ml-1 mr-1 p-0">
-            {% if project.github %}
-            <div class="github-icon">
-              <div class="icon" data-toggle="tooltip" title="Code Repository">
-                <a href="{{ project.github }}" target="_blank"><i class="fab fa-github gh-icon"></i></a>
-              </div>
-              {% if project.github_stars %}
-              <span class="stars" data-toggle="tooltip" title="GitHub Stars">
-                <i class="fas fa-star"></i>
-                <span id="{{ project.github_stars }}-stars"></span>
-              </span>
-              {% endif %}
-            </div>
-            {% endif %}
-          </div>
+        <div class="expinfo">
+          {% if exp.redirect %}
+            <a href="{{ exp.redirect }}" target="_blank">
+          {% else %}
+            <a href="{{ exp.url | relative_url }}">
+          {% endif %}
+          <div class="exptitle">{{ exp.title }}</div>
+          <div class="expdesc">{{ exp.description }}</div>
+          </a>
         </div>
       </div>
-    </a>
-  </div>
+
+  </li>
 {% endfor %}
 
+</ol>
 </div>

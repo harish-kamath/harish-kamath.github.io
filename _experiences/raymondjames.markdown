@@ -1,9 +1,10 @@
 ---
 layout: page
-title: project 2
-description: a project with a background image
-img: /assets/img/3.jpg
+title: Raymond James Financial
+description: Software Engineering Intern
+img: /assets/img/raymondjames.png
 year: 2018
+year_prefix: May-Jul
 ---
 
 Every project has a beautiful feature showcase page.
