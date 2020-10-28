@@ -57,8 +57,8 @@ google_analytics: UA-XXXXXXXXX # out your google-analytics code
 # Blog
 # -----------------------------------------------------------------------------
 
-blog_name:  # your blog must have a name for it to show up in the nav bar
-blog_description: Coming soon!
+blog_name: blog # your blog must have a name for it to show up in the nav bar
+blog_description: Some of the work I'm interested in
 permalink: /blog/:year/:title/
 
 # Pagination
@@ -124,7 +124,7 @@ plugins:
 
 scholar:
 
-  last_name: Einstein
+  last_name: Kamath
 
   style: apa
   locale: en

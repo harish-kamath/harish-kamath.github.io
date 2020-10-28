@@ -1,24 +1,16 @@
 ---
 layout: distill
-title: a distill-style blog post
-description: an example of a distill-style blog post and main elements
-date: 2018-12-22
+title: Sparse Operators for Faster Model Inference
+description: A case study of how we can use sparse operators in ONNX to improve model performance. I use VowpalWabbit in order to showcase the benefits of sparse inference. This was work done when I worked for the RL Open Source Fest program hosted by Microsoft Research NYC.
+date: 2020-10-20
 
 authors:
-  - name: Albert Einstein
-    url: "https://en.wikipedia.org/wiki/Albert_Einstein"
+  - name: Harish Kamath
+    url: "http://hkamath.com"
     affiliations:
-      name: IAS, Princeton
-  - name: Boris Podolsky
-    url: "https://en.wikipedia.org/wiki/Boris_Podolsky"
-    affiliations:
-      name: IAS, Princeton
-  - name: Nathan Rosen
-    url: "https://en.wikipedia.org/wiki/Nathan_Rosen"
-    affiliations:
-      name: IAS, Princeton
+      name: Georgia Institute of Technology
 
-bibliography: 2018-12-22-distill.bib
+bibliography: sparseops.bib
 
 # Below is an example of injecting additional post-specific styles.
 # If you use this post as a template, delete this _styles block.
