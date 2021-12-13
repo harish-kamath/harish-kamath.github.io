@@ -13,7 +13,7 @@ footer_text: >
   Please <a href="mailto:harish.k.kamath@gmail.com">email me</a> to get in contact! 
 
 lang: en # the language of your site (for example: en, fr, cn, ru, etc.)
-icon: 🔥 # the emoji used as the favicon
+icon: 👨🏽‍💻 # the emoji used as the favicon
 url: https://harish-kamath.github.io # the base hostname & protocol for your site
 baseurl: # the subpath of your site, e.g. /blog/
 last_updated: true # set to true if you want to display last updated in the footer
