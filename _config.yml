@@ -2,15 +2,15 @@
 # Site settings
 # -----------------------------------------------------------------------------
 
-title: Harish Kamath's Webpage! # the website title (if blank, full name will be used instead)
+title: It's me! # the website title (if blank, full name will be used instead)
 first_name: Harish
 middle_name:
 last_name: Kamath
-email: hkamath@gatech.edu
+email: harish.k.kamath@gmail.com
 description: > # the ">" symbol means to ignore newlines until "footer_text:"
   A simple, whitespace theme for academics. Based on [*folio](https://github.com/bogoli/-folio) design.
 footer_text: >
-  Please <a href="mailto:hkamath@gatech.edu">email me</a> to get in contact! 
+  Please <a href="mailto:harish.k.kamath@gmail.com">email me</a> to get in contact! 
 
 lang: en # the language of your site (for example: en, fr, cn, ru, etc.)
 icon: 🔥 # the emoji used as the favicon
@@ -49,7 +49,7 @@ og_image: # The site-wide (default for all links) Open Graph preview image
 # -----------------------------------------------------------------------------
 
 github_username: harish-kamath # your GitHub user name
-twitter_username: # your Twitter handle
+twitter_username: kamath_harish # your Twitter handle
 linkedin_username: harish-kamath # your LinkedIn user name
 scholar_userid: 2gZLOs8AAAAJ # your Google Scholar ID
 orcid_id: # your ORCID ID
@@ -67,7 +67,7 @@ stackoverflow_id: #your stackoverflow id
 rss_icon: true
 
 contact_note: >
-  Reach me by email, or a message on LinkedIn!
+  Reach me by email, Twitter, or a message on LinkedIn!
 
 google_analytics: UA-XXXXXXXXX # out your google-analytics code
 panelbear_analytics: XXXXXXXXX # panelbear analytics site ID
@@ -76,8 +76,8 @@ panelbear_analytics: XXXXXXXXX # panelbear analytics site ID
 # Blog
 # -----------------------------------------------------------------------------
 
-blog_name:  # your blog must have a name for it to show up in the nav bar
-blog_description: Coming soon!
+blog_name:  Musings # your blog must have a name for it to show up in the nav bar
+blog_description: Exploring topics I am interested in
 permalink: /blog/:year/:title/
 
 # Pagination
@@ -105,7 +105,7 @@ collections:
     output: true
     permalink: /experiences/:path/
 
-news_limit: 5
+news_limit: 3
 
 # -----------------------------------------------------------------------------
 # Jekyll settings
