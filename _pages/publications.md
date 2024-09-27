@@ -2,8 +2,8 @@
 layout: page
 permalink: /publications/
 title: publications
-description: publications by categories in reversed chronological order.
-years: [2020]
+description: Research papers I have worked on.
+years: [2022,2020]
 nav: true
 ---
 
