@@ -10,7 +10,7 @@ email: harish.k.kamath@gmail.com
 description: > # the ">" symbol means to ignore newlines until "footer_text:"
   Harish Kamath's personal webpage.
 footer_text: >
-  Please <a href="mailto:harish.k.kamath@gmail.com">email me</a> to get in contact! 
+  Thanks for visiting!
 
 lang: en # the language of your site (for example: en, fr, cn, ru, etc.)
 icon: 👨🏽‍💻 # the emoji used as the favicon
@@ -29,7 +29,7 @@ impressum_path:  # set to path to include impressum link in the footer, use the 
 # Layout
 # -----------------------------------------------------------------------------
 
-navbar_fixed: true
+navbar_fixed: false
 footer_fixed: false
 
 # Dimensions
@@ -76,8 +76,8 @@ panelbear_analytics: XXXXXXXXX # panelbear analytics site ID
 # Blog
 # -----------------------------------------------------------------------------
 
-blog_name:  Musings # your blog must have a name for it to show up in the nav bar
-blog_description: Exploring topics I am interested in
+blog_name:  Harish's Blog # your blog must have a name for it to show up in the nav bar
+blog_description: Thoughts, research, and other things I want to write about
 permalink: /blog/:year/:title/
 
 # Pagination
@@ -218,7 +218,7 @@ responsive_image:
     - width: 480
     - width: 800
     - width: 1400
-      quality: 90
+      quality: 100
   # Strip EXIF and other JPEG profiles. Helps to minimize JPEG size.
   strip: true
 
@@ -284,3 +284,11 @@ popper:
 medium_zoom:
   version: "1.0.6"
   integrity: "sha256-EdPgYcPk/IIrw7FYeuJQexva49pVRZNmt3LculEr7zM="
+pseudocode:
+  integrity:
+    css: "sha256-VwMV//xgBPDyRFVSOshhRhzJRDyBmIACniLPpeXNUdc="
+    js: "sha256-aVkDxqyzrB+ExUsOY9PdyelkDhn/DfrjWu08aVpqNlo="
+  url:
+    css: "https://cdn.jsdelivr.net/npm/pseudocode@{{version}}/build/pseudocode.min.css"
+    js: "https://cdn.jsdelivr.net/npm/pseudocode@{{version}}/build/pseudocode.min.js"
+  version: "2.4.1"

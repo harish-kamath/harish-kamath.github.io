@@ -25,7 +25,7 @@ $$
 \left( \sum_{k=1}^n a_k b_k \right)^2 \leq \left( \sum_{k=1}^n a_k^2 \right) \left( \sum_{k=1}^n b_k^2 \right)
 $$
 
-The citation is presented inline like this: <d-cite key="gregor2015draw"></d-cite>
+The citation is presented inline like his: <d-cite key="gregor2015draw"></d-cite>
 Footnote looks like this<d-footnote>This will become a hoverable footnote.</d-footnote>.
 <d-code block language="javascript">
   var x = 25;
