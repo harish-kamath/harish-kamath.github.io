@@ -21,4 +21,4 @@ Previously, I was an ML Research Engineer at [Scale AI](http://www.scale.com), w
 
 
 ###### **Other things about me:**
-I used to dance competitively in college (see if you can [spot me](https://www.youtube.com/watch?v=oGEAmH5qomw&t=124s&ab_channel=BollywoodAmerica)). I also play basketball (go Hawks!), go on [runs](https://www.strava.com/athletes/6201649), and play [chess](https://www.chess.com/member/chandhoo).
+I used to dance competitively in college (see if you can spot me [here](https://www.youtube.com/watch?v=oGEAmH5qomw&t=124s&ab_channel=BollywoodAmerica) or [here](https://youtu.be/Uuc4cUT08yM?t=390)). I also play basketball (go Hawks!), go on [runs](https://www.strava.com/athletes/6201649), and play [chess](https://www.chess.com/member/chandhoo).
