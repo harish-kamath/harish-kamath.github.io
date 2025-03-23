@@ -255,11 +255,11 @@ blockquote {
   text-align: center;
 
   .contact-icons {
-    font-size: 4rem;
+    font-size: 2rem;
 
     a {
       i::before {
-        color: var(--global-text-color);
+        color: gray;
         -webkit-transition: all 0.2s ease-in-out;
       }
 

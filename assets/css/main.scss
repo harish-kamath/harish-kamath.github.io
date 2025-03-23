@@ -6,10 +6,118 @@
 // Dimensions
 $max-content-width: {{ site.max_width }};
 
-@import
-  "variables",
-  "themes",
-  "layout",
-  "base",
-  "distill"
+@import "variables",
+"themes",
+"layout",
+"base",
+"distill"
 ;
+
+// Custom styles for simplified design
+
+.blog-posts {
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+
+.blog-posts h2 {
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.5rem;
+}
+
+.blog-section {
+  margin-bottom: 2rem;
+}
+
+.section-title {
+  margin-bottom: 1rem;
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.post-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.post-card {
+  flex: 0 0 calc(100% - 1rem);
+  // border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 1rem;
+  // background-color: #f4f4f4;
+  // box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  // max-width: 400px;
+  border-left: 4px solid var(--global-theme-color);
+  padding-left: 1rem;
+}
+
+.post-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.post-card h4 {
+  font-size: 1.1rem;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.post-card .post-meta {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.post-excerpt {
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+  color: #555;
+}
+
+.read-more {
+  display: inline-block;
+  font-size: 0.85rem;
+  color: #0366d6;
+  text-decoration: none;
+  color: gray;
+}
+
+.read-more:hover {
+  text-decoration: underline;
+}
+
+.post-meta {
+  color: #666;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+// Blog post specific styling
+.back-link {
+  margin-bottom: 1rem;
+}
+
+.back-link a {
+  color: #666;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.back-link a:hover {
+  text-decoration: underline;
+}
+
+.tag-item {
+  display: inline-block;
+  background-color: #f1f1f1;
+  border-radius: 3px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+  margin-right: 0.5rem;
+  color: #666;
+}

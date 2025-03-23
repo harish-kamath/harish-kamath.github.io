@@ -9,8 +9,7 @@ last_name: Kamath
 email: harish.k.kamath@gmail.com
 description: > # the ">" symbol means to ignore newlines until "footer_text:"
   Harish Kamath's personal webpage.
-footer_text: >
-  Thanks for visiting!
+footer_text: ""
 
 lang: en # the language of your site (for example: en, fr, cn, ru, etc.)
 icon: 👨🏽‍💻 # the emoji used as the favicon
@@ -76,13 +75,13 @@ panelbear_analytics: XXXXXXXXX # panelbear analytics site ID
 # Blog
 # -----------------------------------------------------------------------------
 
-blog_name:  Harish's Blog # your blog must have a name for it to show up in the nav bar
+blog_name:  # your blog must have a name for it to show up in the nav bar
 blog_description: Thoughts, research, and other things I want to write about
 permalink: /blog/:year/:title/
 
 # Pagination
 pagination:
-  enabled: true
+  enabled: false
 
 # Comments
 disqus_shortname: # put your disqus shortname
@@ -97,12 +96,6 @@ collections:
       layout: post
     output: true
     permalink: /news/:path/
-  projects:
-    output: true
-    permalink: /projects/:path/
-  experiences:
-    output: true
-    permalink: /experiences/:path/
 
 news_limit: 3
 
