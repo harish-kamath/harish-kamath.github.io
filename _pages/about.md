@@ -17,6 +17,8 @@ Hey! I'm Harish. I'm currently working on something new.
 
 Previously, I worked on 3D computer vision and diffusion models at [Scale AI](http://www.scale.com). I graduated from [Georgia Tech](http://gatech.edu) in 2021, with a Bachelor's degree in CS & Math.
 
+I believe that AI is the most important technology that humans will ever create. I want to spend my career understanding how it works, and ensuring that it is safe and helpful to everyone.
+
 ###### Things I like to do:
 
 - Go on long walks
