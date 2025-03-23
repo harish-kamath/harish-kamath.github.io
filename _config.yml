@@ -132,7 +132,7 @@ keep_files:
 # Plug-ins
 plugins:
   - jekyll-archives
-  - jekyll-diagrams
+  # - jekyll-diagrams
   - jekyll-email-protect
   - jekyll-feed
   - jekyll-github-metadata
@@ -220,7 +220,7 @@ responsive_image:
 # Jekyll Diagrams
 # -----------------------------------------------------------------------------
 
-jekyll-diagrams:
+# jekyll-diagrams:
     # configuration, see https://github.com/zhustec/jekyll-diagrams.
     # feel free to comment out this section if not using jekyll diagrams.
 
