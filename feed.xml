@@ -1,0 +1,1213 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en"><generator uri="https://jekyllrb.com/" version="4.4.1">Jekyll</generator><link href="https://harish-kamath.github.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://harish-kamath.github.io/" rel="alternate" type="text/html" hreflang="en" /><updated>2025-10-06T04:31:43+00:00</updated><id>https://harish-kamath.github.io/feed.xml</id><title type="html">Harish Kamath</title><subtitle>Harish Kamath&apos;s personal webpage.
+</subtitle><entry><title type="html">A Microscope into the Dark Matter of Interpretability</title><link href="https://harish-kamath.github.io/blog/2024/rqae/" rel="alternate" type="text/html" title="A Microscope into the Dark Matter of Interpretability" /><published>2024-11-08T15:12:00+00:00</published><updated>2024-11-08T15:12:00+00:00</updated><id>https://harish-kamath.github.io/blog/2024/rqae</id><content type="html" xml:base="https://harish-kamath.github.io/blog/2024/rqae/"><![CDATA[<div style="background-color: rgba(255, 215, 0, 0.05); border-top: 3px solid rgb(255, 215, 0); border-bottom: 3px solid rgb(255, 215, 0); padding: 15px; margin-bottom: 1rem; text-align: center;">
+<h3 style="width: 100%;">Too Long; Didn't Read</h3>
+<br />
+<p>We propose the RQAE (Residual Quantization Autoencoder), a new architecture to interpret LLM representations which learns features hierarchically. You can control the <a href="#fig3b">specificity</a> of a feature as you move through the hierarchy, and can naturally <a href="#fig4a">split features</a> into more specific subfeatures. In evaluations, RQAE has <a href="#fig2c"> better reconstruction</a> than SAEs, and we find that RQAE features are more interpretable than Gemmascope SAE features using Eleuther AI's <a href="https://arxiv.org/abs/2410.13928">evaluation suite</a>.</p>
+
+<p>A single layer of RQAE projects the activation of a LLM into a learned (very small) subspace, quantizes the subspace, and projects back to the original dimension. Then, the residual between the original activation and this quantized representation is the input to the next layer. Each layer learns a new subspace, which depends on the previous residual, so later layers are dependent on earlier layers. This induces a hierarchy.</p>
+
+<p>A recent <a href="https://x.com/JoshAEngels/status/1848339201864974674">paper</a> finds that the residuals of SAEs (i.e. original activation - SAE reconstruction) contain extra features that even the largest SAEs do not find. RQAE reduces these <a href="https://www.lesswrong.com/posts/rZPiuFxESMxCDHe4B/sae-reconstruction-errors-are-empirically-pathological">pathological errors</a> iteratively. Since we can show that <a href="#lemma1">vector quantization is a specific type of SAE</a>, RQAE can be equivalently defined as stacking many (weak) SAEs on top of each other.</p>
+
+<p>This post presents the motivation, architecture, and experiments justifying RQAE. We also have released the <a href="https://github.com/harish-kamath/rqae">code</a>, <a href="https://huggingface.co/harish-kamath/rqae">model weights</a>, and a <a href="https://rqae.vercel.app/">feature dashboard</a>.</p>
+</div>
+<div>
+    <a href="https://x.com/kamath_harish/status/1854988777175105865">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#000000" style="margin-right: 5px;">
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path>
+    </svg>
+    </a>
+</div>
+
+<h1 id="introduction">Introduction</h1>
+
+<p>The purpose of interpretability is to decompose a model into human-understandable features. This focus has led to some incredibly interesting work, such as include visualizing what parts of an image a model uses to predict a class <d-cite key="gradcam"></d-cite> and seeing how RL agents identify friends and enemies in a game <d-cite key="coinrun"></d-cite>.</p>
+
+<p>However, Large Language Models (LLMs) may be more complicated to interpret. Text is a much denser interpretable medium than visuals, and LLMs are orders of magnitude larger than any other model we’ve ever trained. This work is heavily inspired by <a href="https://transformer-circuits.pub/">transformer-circuits</a>, which has laid out a foundation for how we can begin to interpret LLMs. If you’re new to interpretability, we would recommend reading these works first, but we’ll provide a quick rundown of the core concepts in the sections below.</p>
+
+<p>Other work has explored how different layers of the LLM contribute to different functions (for example, the feedforward layers store facts and “knowledge” <d-cite key="rome"></d-cite>). However, the scope of this work is limited to considering the residual stream after the middle layer of an LLM (mostly, with the <a href="https://huggingface.co/google/gemma-2-2b">Gemma 2 2B</a> LLM). We hope to extend RQAE to other layers and other LLMs, as Gemmascope <d-cite key="gemmascope"></d-cite> has done with SAEs, in future work.</p>
+
+<h2 id="world-models">World Models</h2>
+
+<p>What is a human interpretable feature, and why would they exist in LLMs? We know that LLMs store “world models” because they are <em>really</em> good at predicting the next token, and compressing the training data to the extent that they do requires some latent understanding of the world. Other work explores this concept in detail <d-cite key="worldmodels"></d-cite>, but roughly:</p>
+
+<ol>
+  <li>There are a large number of things that can happen in the world</li>
+  <li>We observe what happens, and we reason about what happens with a much smaller set of “latent” features.</li>
+</ol>
+
+<p>For example, if we see someone drop a glass bottle, then we expect the bottle to shatter when it hits the ground. This is not because we have observed exactly that person dropping exactly that bottle before. It’s because we have learned a very small set of latent features about physics, which we can use to model the bottle breaking.</p>
+
+<p>LLMs <em>must</em> do something similar - they just don’t have the capacity to fully memorize their training data! Thus, they must also be working with some set of latent features that they can manipulate to solve the next token prediction task. A lot of interpretability research is focused on finding these latent features, and figuring out how the model uses them.</p>
+
+<h2 id="linear-representations-and-superposition">Linear Representations and Superposition</h2>
+
+<p>How do LLMs organize and use these latent features? There’s a lot of empirical evidence that LLMs describe features as simply directions in space, known as the Linear Representation Hypothesis (LRH). If true, it’s a very powerful framework - directions are just vectors, and we have a lot of theory to work with vectors.</p>
+
+<p>Then, a full LLM activation is the sum of multiple atomic feature vectors. For example, we might think of a dog as the ‘animal’ feature plus the ‘pet’ feature, minus the ‘feline’ feature. Features also scale differently depending on the subject: a dog will have more of the ‘smart’ feature than a goldfish.</p>
+
+<p>We borrow a formal definition of the LRH from <a href="https://transformer-circuits.pub/2024/july-update/index.html#linear-representations-mathematical">here</a>:</p>
+
+<blockquote id="defn1">
+<b>Definition 1:</b> A linear representation has the following two properties:
+
+<ol style="line-height: 1em; font-size: 0.9em; margin: 1.5em 0.5em;">
+  <li><b>Composition as Addition</b>: The presence of a feature is represented by adding that feature.</li>
+  <li><b>Intensity as Scaling</b>: The intensity of a feature is represented by magnitude.</li>
+</ol>
+
+The Linear Representation Hypothesis states that an LLM linearly represents human-interpretable features.
+
+</blockquote>
+
+<p>There is one problem with the LRH: the residual stream of an LLM with width $d$ lies in the space $\mathbb{R}^d$. However, there can be at most $d$ orthogonal vectors in this space (the basis of the space), which means that there can be at most $d$ unique “feature directions”.</p>
+
+<p>In order for the LRH to be true, models must learn features in <a href="https://transformer-circuits.pub/2022/toy_model/index.html">superposition</a>. This means that features <em>interfere</em> with each other, and you can not fully separate all features (e.g. any token with feature X must also have at least a little bit of feature Y, even if they’re two distinct features). However, you can also fit exponentially more features in a $d$-dimensional space which are only $\epsilon$-orthogonal to each other!</p>
+
+<p>Similar features take similar directions, so interference is usually okay. Thus, when measuring by cosine similarity, we see clusters forming which correspond to similar features. For example, the “has fur” feature should be more aligned with the “cat” feature than with the “shark” feature - although in this example, interference might make it hard for the model to learn what a hairless cat is.</p>
+
+<h2 id="sparse-autoencoders">Sparse Autoencoders</h2>
+
+<p>Sparse Autoencoders (SAEs) model the LRH by learning an overcomplete basis to take features out of superposition <d-cite key="sae"></d-cite>. SAEs take inspiration from sparse coding theory<d-cite key="yima"></d-cite>: it suggests that learning a dictionary of features that only fire sparsely (i.e. a small subset of features that reconstruct each activation faithfully) also results in that dictionary being human-interpretable.</p>
+
+<div class="row pt-3">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/disentangled-480x246.png" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/disentangled-800x411.png" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/disentangled.png" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    A figure taken from <a href="https://transformer-circuits.pub/2022/toy_model/index.html">Toy Models of Superposition</a>. In this case, the observed model is our LLM, and the disentangled model is what we are trying to learn with a SAE.
+</div>
+
+<p>Thinking back to <a href="#world-models">World Models</a>, this actually makes a lot of sense! We can think of the “larger” model as the set of disentangled latent features that model the real world. The larger model only activates sparsely - only some neurons are activated for any given input. Sparse autoencoders try to reconstruct this larger model, in order to represent features out of superposition.</p>
+
+<blockquote id="defn2">
+<b>Definition 2:</b> A sparse autoencoder $S$ of size $n$ is a model that takes in a LLM activation $r \in \mathbb{R}^d$ and does the following:
+
+$$
+C(r) = \sigma(W_{in}r  + b_{in})
+$$
+
+$$
+S(r) = W_{out}C(r) +b_{out}
+$$
+
+where $\sigma$ is some nonlinearity (usually ReLU), and $W_{out} \in \mathbb{R}^{d \times n}, W_{in} \in \mathbb{R}^{n \times d}$ (for $n \gg d$). $b_{in} \in \mathbb{R}^n, b_{out} \in \mathbb{R}^d$ are bias terms.
+
+The model is trained to minimize the reconstruction error $||r - S(r)||_2$. An additional loss term is added to induce sparsity in $C(r)$ - common methods to induce sparsity include TopK<d-cite key="topk" />, L1 loss<d-cite key="sae" />, or learning a threshold per feature <d-cite key="jumprelu" />.
+
+</blockquote>
+
+<p>To explicitly draw the connection to the LRH, a SAE performs the following algorithm (ignoring biases):</p>
+
+<ol>
+  <li>Begin with some entangled LLM activation $r$, and consider that $W_{in}$ consists of $n$ “encoding” vectors.</li>
+  <li>Compare $r$ against each encoding vector by calculating their dot product.</li>
+  <li>Apply a nonlinearity (usually ReLU) and some sparsity function (TopK, L1, etc.), to act as a filter for sparsity.</li>
+  <li>There are now $n$ coefficients  $C(r) = [c_1, c_2, …]$, which are the intensities of each feature in $r$.</li>
+  <li>Multiply $C$ by the columns of $W_{out}$, which are the actual feature vectors (“decoding” vectors) that you have learned.</li>
+</ol>
+
+<div style="background-color: rgba(125, 115, 0, 0.05); border-top: 3px solid rgb(125, 115, 0); border-bottom: 3px solid rgb(125, 115, 0); padding: 15px; text-align: center; width: 90%; margin: 0 auto;margin-bottom: 1rem;">
+<b>NOTE:</b> <i>Notice that each (encoder, decoder) pair of vectors are closely linked - the cosine similarity ($\propto$ dot product) that a representation has to an encoding vector directly defines the intensity of the feature. At the beginning of training, the encoder is initialized as the transpose of the decoder so that encoding vectors = features, and empirically the trained model has encoding and decoding vector pairs with high cosine similarity.</i>
+</div>
+<p>However, an SAE can only learn a set number $n$ of features, and it’s likely that $n \ll N$ for the true number of features $N$ the LLM has learned. To give an example, consider two “ground-truth” features $f_1$ and $f_2$ - these features are similar but not exactly the same (e.g. different breeds of dogs). How will the SAE learn these features?</p>
+
+<h2 id="the-feature-hierarchy">The Feature Hierarchy</h2>
+
+<p>The rough answer to the question posed above is: the model will learn an average direction that will fire weakly for these features - for example, a “dog” feature. It might also learn a few features that weakly activate for related, more general features - for example, a “living” feature, or a “pet” feature. Empirically, SAEs only learn general features, and more specific features are indistinguishable from one another.</p>
+
+<p>There are two widely observed issues with SAEs that stem from this intuition:</p>
+
+<ol>
+  <li><strong>Feature splitting</strong>. If you train a wider SAE, you will notice that more general features split into smaller, more specific features.</li>
+  <li><strong>Feature absorption</strong>. You learn two separate features in your SAE that are describing the same ground-truth feature - as a result, representations with that ground-truth feature are split across the two learned features without any discernable pattern (the difference between the two features is completely spurious)<d-cite key="absorption"></d-cite>.</li>
+</ol>
+
+<!-- 3. **Feature shrinkage**. SAEs routinely *underestimate* the intensity of a given feature. It happens because of the sparsity penalty during training <d-cite key="feature_suppression" />. JumpReLUs <d-cite key="jumprelu" /> largely mitigate this issue, but it's related to the first two because it happens due to learning entangled features (an SAE will underestimate a feature's intensity because it wants to account for other features that will interfere). -->
+
+<p>The reason these happen is because SAE features are not necessarily atomic. They might need to be broken down or grouped together, but it’s difficult to tell which is which, and the training objective doesn’t bias the model one way or the other. This begs the question: how should we organize features?</p>
+
+<p>A paper from UChicago attempts to answer this question <d-cite key="cathierarchy"></d-cite>. They split up features in two dimensions: <strong>hierarchical</strong> features, such as organism -&gt; (plant -&gt; (tree, bush, etc.), animal -&gt; (bird, reptile, fish, etc.)), and <strong>categorical</strong> features, such as (dog, cat, hamster, etc.). Hierarchical features are organized orthogonally to each other, while categorical features organize themselves into polytopes.</p>
+
+<p>SAEs treats features as if they are all categorical. It <em>can</em> learn hierarchies of features (for example, it can learn separate features for organism, plant, animal, etc.) - but there is nothing in the architecture that <em>encourages</em> it to learn such features. Our best guess is that it learns hierarchy based on the frequency of the concepts in the training data alone, based on other work <d-cite key="oversampling"></d-cite> that finds SAEs learn more granular features when trained on specialized datasets. However, this is still an open question, and we don’t propose a clear answer here.</p>
+
+<h2 id="adding-inductive-bias">Adding Inductive Bias</h2>
+
+<p>As mentioned above, SAEs do not have an inductive bias for how features should relate to one another. At the end of training, you are left with a flat dictionary of features, and it is up to you to interpret and organize them.</p>
+
+<p>In contrast, this work introduces the inductive bias that features <em>must</em> be composed hierarchically. It’s not clear whether hierarchy is sufficient or necessary for all features a LLM represents, but feature hierarchies do seem like the natural answer to solving the problem of feature splitting/absorption.</p>
+
+<p>We define a feature hierarchy to consist of parent and child features, such that any time a feature is activated, it’s parent will also be activated, and zero or one of it’s children will be activated. This addresses the two issues presented in the previous section:</p>
+
+<ol>
+  <li>If a feature splits, then we define the base feature as higher in the hierarchy, and the split features as lower in the hierarchy.</li>
+  <li>If two features should be absorbed, then only consider their common parent feature as the atomic feature.</li>
+</ol>
+
+<!-- 3. Feature shrinkage should not occur, since exactly one feature will be active at each layer of the hierarchy, and there is no incentive to account for interference. -->
+
+<p>This isn’t the <em>only</em> way to define a feature hierarchy (and probably not the best way) - for example, you can define a many-to-many relationship between parents and children - but it is simple and, as shown in the next section, easy to implement.</p>
+
+<h1 id="rqae">RQAE</h1>
+
+<p>In this section, we present the Residual Quantization Autoencoder (RQAE).</p>
+
+<div class="row pt-3" id="fig1a">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/rqae_simple-480x451.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/rqae_simple-800x751.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/rqae_simple.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 1a.</b> How both SAE and RQAE decompose the activation of a LLM into interpretable parts.
+</div>
+
+<p>Since RQAE tackles the same problem as SAEs (decomposing an activation into interpretable parts), it should be no surprise that the end result also looks similar. <a href="#fig1a">Fig 1a</a> shows how both RQAE and SAE split up an activation from an LLM. We even use the same training loss (MSE)!</p>
+
+<p>Of course, not all feature decompositions are equal. SAE relies on the bottleneck of sparsity to control the type of features that are learned. RQAE uses two bottlenecks: projecting into subspaces, and quantizing the subspaces into a relatively small number of codebooks (i.e. only a few directions in the subspace can be chosen).</p>
+
+<div class="row pt-3" id="fig1">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/rqae_detail-480x681.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/rqae_detail-800x1135.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/rqae_detail.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 1b.</b> An overview of how RQAE decomposes a LLM activation from <a href="#fig1a">Fig. 1a</a>.
+</div>
+
+<p>RQAE uses residual vector quantization <d-cite key="rvq"></d-cite> (RVQ) to autoencode the LLM representation - but we also add a linear in/out layer between each quantization step, which allows the model to iteratively choose different subspaces of the representation space to quantize. To implement RVQ, we use a variant of FSQ <d-cite key="fsq"></d-cite> that uses hyperspheres instead of hypercubes to define codebooks. FSQ encourages all codebooks to be utilized fully, which is especially important when you have many layers.</p>
+
+<p><code class="language-plaintext highlighter-rouge">&lt;span id="algo"&gt;</code>
+Here is the equivalent algorithm (to <a href="#defn-2">SAEs</a>) for RQAE:</p>
+
+<ol>
+  <li>Begin with some LLM activation $r$. For $n_q$ layers, repeat the following:</li>
+</ol>
+
+<ul>
+  <li>Project $r$ into a small subspace with a linear layer, called projection $p$.</li>
+  <li>Normalize $p$ to get $p_{norm}$</li>
+  <li>Find the closest codebook to $p_{norm}$ from a set of codebooks using Euclidean distance. Call this codebook $\hat p$, with index $c_i$ for layer $i$.</li>
+  <li>Project $\hat p$ back into the activation space with a linear layer, called $\hat r$.</li>
+  <li>Set $r = r - \hat r$ as the residual.</li>
+</ul>
+
+<ol>
+  <li>The original activation $r$ has now been quantized with $n_q$ codebooks, and can be represented as a set of codebook indices $(c_1, c_2, …, c_{n_q})$</li>
+</ol>
+
+<p>Similar to how a SAE models the LRH, RQAE models the “feature hierarchy” mentioned <a href="#adding-inductive-bias">above</a>. For any given LLM activation, every layer chooses exactly one codebook. The subspaces that later layers choose are dependent on earlier layers (since the input to any given layer is original activation - sum(quantizations from previous layers)), encouraging a learned hierarchy between layers. Thus, a RQAE model with $n$ layers and $c$ codebooks per layer learns $c \times n$ unique values, but can represent $c^n$ different activations.</p>
+
+<h2 id="rqae--stacked-saes">RQAE = Stacked SAEs</h2>
+
+<p>We draw a connection between the layers of a RQAE and a SAE.</p>
+
+<p>Conceptually, a single layer of RQAE consists of the same parts as the SAE algorithm mentioned <a href="#sparse-autoencoders">above</a>: an encoder (linear in layer), intensity coefficients (codebook values), and a decoder that corresponds to features (linear out layer). Formally:</p>
+
+<blockquote id="lemma1">
+<b>Lemma 1:</b> A single layer of RQAE can be equivalently defined as a Top1 SAE.
+<br />
+<b>Proof:</b> Still a WIP. Will follow <a href="https://euclaise.xyz/vq-is-mlp/">this work</a> closely
+</blockquote>
+
+<div style="background-color: rgba(125, 115, 0, 0.05); border-top: 3px solid rgb(125, 115, 0); border-bottom: 3px solid rgb(125, 115, 0); padding: 15px; text-align: center; width: 90%; margin: 0 auto;margin-bottom: 1rem;">
+<b>NOTE:</b> <i>This lemma does not make any claims about the training dynamics or quality of features learned by RQAE compared to an equivalent SAE. In fact, design decisions such as FSQ heavily restrict the type of features that RQAE can learn. The lemma only exists to illustrate the relationship between RQAE and SAE.</i>
+</div>
+
+<p>In practice, we use a very small codebook dimension (in the experiments section, $4$). This is needed for vector quantization (especially FSQ, whose codebook size grows exponentially with respect to codebook dimension). At first glance, this seems concerning: a SAE can find features in a feature manifold that lives in higher-dimensional subspaces, but a RQAE layer can not!</p>
+
+<p>This is true theoretically. However, in practice there is a large body of work that suggests LLM features and feature manifolds are mostly represented in very low dimensional subspaces (i.e. they are rank deficient)<d-cite key="lora"></d-cite>. It’s likely that RQAE won’t miss many features or manifolds because it projects on a lower dimension - we think that it still <em>can</em> learn those features across RQAE layers, but we leave that to future work.</p>
+
+<p><br /></p>
+
+<h3 id="why-quantization">Why quantization?</h3>
+
+<p>A natural question to ask is why quantization should be used in the first place. Especially if quantization = weak SAE, why not just use a better SAE? We don’t think quantization is necessary, and would be interested in future work that replicates RQAE using SAEs instead of quantization!</p>
+
+<p>However, quantization turns out to be very useful:</p>
+
+<ol>
+  <li>Quantization (= Top1 SAE) allows only a 1:1 parent:child relationship. It’s not clear how to define a hierarchy with a TopK SAE where $K &gt; 1$ efficiently. One option could be to only consider the highest $N$ activating sets of features for any input activation.</li>
+  <li>RVQ is a very well-studied field. As a result, there are many techniques already developed to help quantization. For example, it seemed to take the community several months to handle “dead features” in SAEs. RVQ has a handful of techniques that are empirically investigated across multiple domains to solve the problem of uniform codebook usage. Also, this problem becomes <em>exponentially</em> harder with more layers, so we’re not sure how SAEs will properly address it.</li>
+  <li>Quantization models are more than an order of magnitude smaller than SAEs. RQAE, which provides much better reconstruction than even the largest Gemmascope SAE with the highest L0, is also smaller than the smallest available Gemmascope SAE.</li>
+</ol>
+
+<h2 id="modeling-dark-matter">Modeling Dark Matter</h2>
+
+<p>Previous work shows that SAEs learn pathological errors <d-cite key="pathological"></d-cite> - that is, the residual between SAEs and original activations are <em>uniquely</em> important for reconstruction (measured by cross entropy loss difference), compared to completely random residuals the same distance away. A following work <d-cite key="decomposedarkmatter"></d-cite> goes further and shows that this pathological error includes features that SAEs miss - a concept that Chris Olah has coined as the “dark matter” of interpretability <d-cite key="darkmatter"></d-cite>.</p>
+
+<p>Interestingly, even the largest SAEs that were evaluated (1 million features) still miss a significant portion of total (linear) features found in the LLM (Figure 10a <d-cite key="decomposedarkmatter"></d-cite>), and the error decays logarithmically with respect to the number of features. The core takeaway is that SAEs are grossly inefficient at uncovering this “dark matter”.</p>
+
+<p>How would one fix this issue with SAEs alone? If you assume that sparse coding is enough of an inductive bias to find interpretable features at very high SAE sizes<d-cite key="scalingmonosemanticity">`, then the real issue begins to look like a capacity problem. Specifically, a model with high enough capacity will also reduce reconstruction error to be very low, so that features don't exist anymore in its residual error. The capacity of existing SAEs (even with 1M features, which is already 4.6GB of model weights on a Gemma 2 2B LLM) does not seem to be enough.</d-cite></p>
+
+<p>This work provides a great motivation for RQAE! A single layer of RQAE is equivalent to a (weak) SAE, as shown above. The next layer of RQAE then learns on the residuals of the first layer, which we assume to have “missing features”, since reconstruction is not perfect. Applying this iteratively allows us to learn more “missing” features after each layer. This mimics the exact experiment run in the paper <d-cite key="decomposedarkmatter"></d-cite>, where they train an SAE on the residuals of a Gemmascope SAE, and find that it uncovers more of the dark matter (linear error) that the Gemmascope SAE missed.</p>
+
+<p>In the next section we show that RQAE empirically also reduces reconstruction error (i.e. higher capacity) compared to even very large SAEs, as expected.</p>
+
+<h2 id="training-a-model">Training a Model</h2>
+
+<p>We train a RQAE with $n_q=1024$ layers, and use a codebook dimension of $d=4$ with quantized values of $[-1, -0.5, 0, 0.5, 1]$ per dimension - resulting in $544$ codebooks per layer (see FSQ <d-cite key="fsq"></d-cite> for more details). We use the following hyperparameters:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Parameter</th>
+      <th>Value</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>LLM</td>
+      <td>Gemma 2 2B</td>
+      <td>Base model to interpret</td>
+    </tr>
+    <tr>
+      <td>Layer</td>
+      <td>Residual Stream after the center layer (12)</td>
+      <td>What layer of the residual stream to train on</td>
+    </tr>
+    <tr>
+      <td>Training Data</td>
+      <td>FineWeb-Edu</td>
+      <td>Dataset used to train RQAE</td>
+    </tr>
+    <tr>
+      <td>Test Data</td>
+      <td>pile-uncopyrighted (Neuronpedia subset)</td>
+      <td>Dataset used for analysis</td>
+    </tr>
+    <tr>
+      <td>num_tokens</td>
+      <td>1B</td>
+      <td>How many tokens we train on</td>
+    </tr>
+    <tr>
+      <td>context_length</td>
+      <td>128</td>
+      <td>Context length we train on</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>We normalize activations passed into RQAE by using the final RMS norm layer of the LLM (note that this means all activations have exactly the same norm). Ablations are still a WIP, but will be added soon.</p>
+
+<p>Let’s look at properties of learned model, to validate assumptions we have based on the model architecture.</p>
+
+<div class="row pt-3" id="fig2a">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/cosine_similarity-480x366.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/cosine_similarity-800x610.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/cosine_similarity.jpg" data-zoomable="" />
+</picture>
+    </div>
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/mags-480x369.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/mags-800x615.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/mags.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 2a.</b> <i>(left)</i> Distribution of pairwise cosine similarities between all learned codebooks (projected out to model dimension). <i>(right)</i> L2 norm of projected codebooks across RQAE layers. 
+</div>
+
+<p><a href="#fig2a">Figure 2a</a> shows the distribution of pairwise cosine similarities between all projected codebooks. Almost all projected codebooks are $\epsilon$-orthogonal with $\epsilon=0.2$, suggesting that they form an overcomplete basis. It also shows the L2 norm of features across RQAE layers - earlier layers have larger norms than later layers, suggesting that earlier layers choose more “confident” directions, and the majority of MSE loss is concentrated in the first few layers.</p>
+
+<!-- <div class="row pt-3" id="fig2b">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/codebook_usage-480x334.jpg">
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/codebook_usage-800x557.jpg">
+    
+    <source media="(max-width: 1400px)" srcset="/assets/resized/codebook_usage-1400x974.jpg">
+    
+    <img class="img-fluid rounded z-depth-1"  src="/assets/img/rqae/codebook_usage.jpg"   data-zoomable />
+</picture>
+    </div>
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/codebook_values-480x317.jpg">
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/codebook_values-800x529.jpg">
+    
+    <source media="(max-width: 1400px)" srcset="/assets/resized/codebook_values-1400x926.jpg">
+    
+    <img class="img-fluid rounded z-depth-1"  src="/assets/img/rqae/codebook_values.jpg"   data-zoomable />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 2b.</b> <i>(left)</i> Distribution of codebook usage across 1M test tokens for the first 16 layers. <i>(right)</i> The same graph, but displaying the coefficients for each feature that the codebook imposes (e.g. codebook $302 = [0, 0, -1, 0]$).
+</div>
+
+One of the most important metrics for any quantization method is codebook usage. From [Figure 2b](#fig2b), we can see that all available codebooks have high utilization across the first 16 layers. This suggests that RQAE is effectively utilizing most of the representational capacity of the model.
+-->
+
+<div class="row pt-3" id="fig2b">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+         <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/mse_ce_comparison-480x213.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/mse_ce_comparison-800x356.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/mse_ce_comparison.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="row pt-3" id="fig2b">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/ce_loss_vs_l0_with_rqae-480x380.png" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/ce_loss_vs_l0_with_rqae-800x633.png" />
+    
+    <source media="(max-width: 1400px)" srcset="/assets/resized/ce_loss_vs_l0_with_rqae-1400x1108.png" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/ce_loss_vs_l0_with_rqae.png" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 2b.</b> <i>(top)</i> MSE Loss and Cross Entropy Loss Difference for RQAE trained on Gemma 9B and 2B models. Both RQAE models are trained with num_quantizers=1024. <i>(bottom)</i> Reconstruction loss of RQAE vs SAE with varying width and L0 for Gemma 2 2B. Note that the same RQAE model is used (num_quantizers=1024), and reconstruction is stopped early, rather than different RQAE models trained with different num_quantizers. 
+</div>
+
+<p><a href="#fig2b">Figure 2b</a> shows that RQAE has higher capacity (as discussed in the <a href="#modeling-dark-matter">previous section</a>), by reducing reconstruction loss. This is with an order of magnitude fewer parameters than an SAE (e.g. a 1M feature SAE takes up 4.6GB of space, while RQAE takes 100MB).</p>
+
+<p>RQAE doesn’t have an equivalent concept of $L_0$, since all layers are used for every input. However, it still seems like an unfair comparison, since we are still using $1024$ unique vectors to reconstruct an activation with CE loss difference $&lt; 0.01$.</p>
+
+<p>The reason that we argue for this comparison is for two reasons:</p>
+
+<ol>
+  <li>If reconstruction loss is low, then we know that we have certainly captured more of the features present in the activation (i.e. less dark matter). Higher $L_0$ may mean that the features become less interpretable in SAEs, but:</li>
+  <li>As mentioned at the beginning of this section, the RQAE inductive bias during training does not come from sparsity. Thus, we shouldn’t expect features to be learned by sparsity, and we shouldn’t expect higher sparsity to correspond to more interpretable features.</li>
+</ol>
+
+<p>Thus, RQAE <em>does</em> reduce dark matter (e.g. even a SAE with very high $L_0$ would do the same), but <em>still</em> learns interpretable features (as opposed to an SAE with high $L_0$). To prove the latter part of that claim, let’s first define what a feature in RQAE is.</p>
+
+<h2 id="defining-a-feature">Defining a Feature</h2>
+
+<p>Features in SAEs are simply defined as the columns of the decoder matrix. When a feature is present in an activation, it also has an associated <em>intensity</em>, measured by ($\propto$) the cosine similarity of the activation to the corresponding row in the encoder matrix. We will use this to motivate the definition of a RQAE feature. Referring back to the <a href="#algo">algorithm</a> at the beginning of this section:</p>
+
+<blockquote id="defn3">
+<b>Definition 3:</b> Let
+$$C_i = \{\text{codebook indices for layer }i\} = \{1,2,...\}$$
+$$\mathbb{C}_i = \{\text{codebook values for layer }i\} = \{c: c \in \mathbb{R}^{codebook\_dim}\}$$
+where you can index $\mathbb{C}_i$ directly with elements of $C_i$ as $\mathbb{C}_i(c)$.
+<br />
+Then, a <b>RQAE feature</b> is defined as a set of (up to) $n_{q}$ codebook indices (one per layer):
+$$f = [c_1, c_2, \dots, c_k]\text{ where } k &lt;= n_{q}, c_i \in C_i$$
+</blockquote>
+
+<blockquote id="defn4">
+<b>Definition 4:</b> Consider a token's activation $t$, that has been quantized by RQAE (see <a href="#algo">algorithm</a>):
+$$t = [t_1, t_2, t_3, \dots, t_{n_q}]\text{ where }t_i \in C_i$$
+Then, the <b>intensity</b> of a feature $f$ in $t$ is defined as:
+$$C(f, t) = \frac{\sum_{i \leq k} cos\_sim(\mathbb{C}_i(t_i), \mathbb{C}_i(c_i)) \cdot L_i}{\sum L_i}$$
+where $L_i$ is the average $L_2$ norm of the columns in the decoder of layer $i$ in RQAE.
+</blockquote>
+
+<p>Similar to SAEs, we measure cosine similarity of the activation to a set of features (only in subspaces) to measure intensity. Since we use FSQ <d-cite key="fsq"></d-cite> to create codebooks, we know that they are evenly spaced out.</p>
+
+<div class="row pt-3" id="fig2c">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/feature_view-480x484.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/feature_view-800x807.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/feature_view.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 2c.</b> Visual of how features are defined in RQAE.
+</div>
+
+<p>It’s important that RQAE uses most of the codebooks at any given layer across a large dataset. Otherwise, the model is not using different codebooks to represent different tokens, and thus measuring cosine similarity is useless. What <a href="#fig3a">Fig. 3a</a> shows us is that even by layer $4$, all tokens in a reasonable large dataset can be almost completely partitioned into unique sets of codebooks.</p>
+
+<div class="row pt-3" id="fig3a">
+    <div class="col-sm mt-3 mt-md-0 text-center rounded p-3" style="height: 3in;">
+        <div class="d-flex justify-content-center align-items-center h-100">
+            <table class="table table-bordered text-center">
+                <tbody>
+                    <tr>
+                        <th style="text-align: center;"># Layers</th>
+                        <th style="text-align: center;">1</th>
+                        <th style="text-align: center;">2</th>
+                        <th style="text-align: center;">3</th>
+                        <th style="text-align: center;">4</th>
+                    </tr>
+                    <tr>
+                        <td># Used Codebooks</td>
+                        <td>544</td>
+                        <td>234,994</td>
+                        <td>3,279,894</td>
+                        <td>4,383,319</td>
+                    </tr>
+                    <tr>
+                        <td>Average # Tokens per Codebook</td>
+                        <td>8606.1</td>
+                        <td>19.92</td>
+                        <td>1.43</td>
+                        <td>1.07</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 3a.</b> Codebook usage for the first four layers, across a dataset of $4M$ tokens. 
+</div>
+
+<p>Since RQAE is hierarchical, the number of unique sets of codebooks that RQAE learns grows exponentially with the number of layers. At first glance, this makes RQAE seem pretty useless - what’s the point of finding $544^{1024}$ new “features”?</p>
+
+<p>Remember from <a href="#defn3">Definition 3</a> that a single feature is defined by a set of codebook indices. When we choose random codebooks per layer, we get useless results, because all tokens in our evaluation dataset have nearly $0$ intensity with the feature. However, if we create a feature by choosing a token in the dataset, and creating a feature with the same codebooks as the token, that feature is highly interpretable. Having an even larger evaluation dataset would result in more unique interpretable features.</p>
+
+<div style="background-color: rgba(125, 115, 0, 0.05); border-top: 3px solid rgb(125, 115, 0); border-bottom: 3px solid rgb(125, 115, 0); padding: 15px; text-align: center; width: 90%; margin: 0 auto;margin-bottom: 1rem;">
+<b>NOTE:</b> <i>Consider the way that SAEs are actually interpreted. The SAE is run on a test set, and you look at how each feature activates on different tokens on the test set to interpret the feature. If the test set does not include examples of the feature, then the feature can not be interpreted - in this sense, SAE features are *only* useful/interpretable given a sufficiently large test set.</i>
+</div>
+
+<p><br />
+<br /></p>
+
+<p>When features are defined by a set of codebooks, a natural question becomes how the feature uses each codebook. We find that more codebooks directly lead to more <strong>specific</strong> features. This makes sense given our understanding of the feature hierarchy: earlier codebooks define coarse features in the hierarchy, while later codebooks define more refined and specific features.</p>
+
+<div class="row pt-3" id="fig3b">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/specificity-480x309.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/specificity-800x515.jpg" />
+    
+    <source media="(max-width: 1400px)" srcset="/assets/resized/specificity-1400x901.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/specificity.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 3b.</b> Example of a feature's specificity changing with number of layers. <a href="rqae-rqae-round_fsq-cbd4-cbs5-nq1024/000032">View Feature in Dashboard</a> 
+</div>
+
+<p>What happens when we use all $n_q$ codebooks in the model? Since RQAE has low reconstruction loss, this becomes very similar to just measuring by cosine similarity of the original activations. This means that only the dominant “feature” in the activation will be modeled, but clearly, SAEs do something similar, at least for some features. Take the Gemmascope features for any Gemmascope SAE, and a large portion (from manual checks, 30+%) of them will be single-token features (i.e. the feature only fires on a single token).</p>
+
+<p><a href="#fig3c">Fig. 3c</a> shows us that earlier layers are certainly doing something different than just ranking by cosine similarity. Specifically, even up to layer $64$ we do not find the Spearman correlation to be above $0.5$, indicating a moderate-weak correlation.</p>
+
+<div class="row pt-3" id="fig3c">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/spearman_corrs-480x366.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/spearman_corrs-800x610.jpg" />
+    
+    <source media="(max-width: 1400px)" srcset="/assets/resized/spearman_corrs-1400x1068.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/spearman_corrs.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 3c.</b> For a set of RQAE features, we take the top $128$ max activating examples. Then, we rank them by cosine similarity (of their original activations) to the top-most activating example, and also rank them on feature intensity by each layer of the RQAE model. Then, we measure the Spearman correlation between all of these rankings to the ranking by cosine similarity. Even by layer $64$, the Spearman correlation is $&lt; 0.5$, indicating that the feature is ranking tokens substantially differently than cosine similarity.
+</div>
+<h2 id="feature-splitting-and-absorption">Feature Splitting and Absorption</h2>
+
+<p>Since RQAE models the <a href="#the-feature-hierarchy">feature hierarchy</a>, we should define how features can split and be absorbed.</p>
+
+<blockquote>
+<b>Definition 3:</b> Given a RQAE feature $f$:
+$$f = [c_1, c_2, \dots, c_k]$$
+The <b>ancestors</b> of $f$ are a set of RQAE features:
+$$A_m(f) = \{g: g = [c_1, c_2, \dots, c_m]\}\text{  } \forall m &lt; k$$
+Two features $f_1$ and $f_2$ are considered $m$<b>-split features</b> if
+$$C(a_1, a_2) \geq \theta\text{     } \forall a_1 \in A_m(f_1), a_2 \in A_m(f_2)$$
+for some threshold $\theta$.
+<br />
+</blockquote>
+
+<p>Essentially, two features are split if some subset of their ancestors are close, but they diverge at some point. This definition does mean that features can split at one layer, and then merge later on, but we couldn’t find interesting examples of this in practice. To illustrate what this looks like, let’s look at an example:</p>
+
+<div class="row pt-3" id="fig4a">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/feature_tree-480x332.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/feature_tree-800x554.jpg" />
+    
+    <source media="(max-width: 1400px)" srcset="/assets/resized/feature_tree-1400x969.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/feature_tree.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 4a.</b> An example of a feature splitting at different layers. Each branch is it's own feature, and intensity is calculated at the layer at which the ancestors split.
+</div>
+
+<p>We developed heuristics for how to choose $\theta$ based on intensities on a test dataset, but we think there’s much more detail that can be added to feature splitting in RQAE - for example, learning thresholds per feature like in JumpReLUs <d-cite key="jumprelu"></d-cite>.</p>
+
+<h1 id="comparison-to-gemmascope">Comparison to Gemmascope</h1>
+
+<p>It’s hard to propose a new architecture, when the existing architecture already has a large body of work and empirical evidence: for example, Gemmascope <d-cite key="gemmascope"></d-cite> used $O($training compute of GPT-3$)$ to train SAEs. As a result, we use this section to directly compare Gemmascope SAEs to RQAE.</p>
+
+<h2 id="finding-equivalent-features">Finding Equivalent Features</h2>
+
+<p>SAEs are useful because they develop a <em>dictionary</em> of features. Although this dictionary is static after training, the small dictionary can be evaluated in depth to come to promising interpretability results.</p>
+
+<p>In contrast, as mentioned above RQAE has exponentially many features - far too many to manually or even automatically interpret. Thus, it’s interesting to know if:</p>
+
+<ol>
+  <li>The same features that an SAE finds <em>exist</em> in RQAE</li>
+  <li>There is an easy way to <em>identify</em> those features automatically in RQAE.</li>
+</ol>
+
+<p>To validate if a RQAE feature is “equivalent” to a SAE feature, we measure the Pearson correlation between SAE intensities and RQAE intensities on top activating, and median-activating examples of the original SAE feature. If this number is high, then the two methods generally recognize the same tokens at the same intensities, and the features are very close. This gives us a measure of determining if the same features <em>exist</em> in RQAE.</p>
+
+<p>An easy way to identify a feature would be looking at it’s top-activating example. If, using this example, RQAE can faithfully reconstruct the feature (as defined above), then we could simply create features from every token in a dataset (which would be tractable to evaluate, e.g. the dataset we use in this work is 4M tokens), and find the most interpretable ones.</p>
+
+<div class="row pt-3" id="fig2a">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/pearson_activations-480x361.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/pearson_activations-800x602.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/pearson_activations.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 5a.</b> We choose a set of features from Gemmascope. For any given feature, we (1) create a RQAE feature based on the quantization of it's top activating example, and (2) create a RQAE feature by directly quantizing it's encoding vector in the SAE. We then measure the Pearson Correlation between the intensities of these two RQAE features and the original Gemmascope feature on the top-activating and median-activating examples of the feature.
+</div>
+
+<p>This result certainly shows that Gemmascope features <em>exist</em> and can be represented with RQAE, since the Pearson correlation of the encoding vector approaches $1$. This means that for every Gemmascope feature, there exists <em>some</em> RQAE feature which ranks tokens very similarly to it.</p>
+
+<p>Using the top-activating example to create a feature, however, is a mixed result. Clearly, as expected, it underperforms using the encoding vector. However, a Pearson correlation of $0.7$ still suggests that there is a <em>strong</em> correlation between the two. We consider this to be good enough evidence to continue using top-activating examples to search for RQAE features, although we discuss more in the <a href="#conclusion">conclusion</a> why this might need future work.</p>
+
+<p>Finally, let’s qualitatively look at some examples of Gemmascope features, and how they compare to RQAE features that use their top activating example. We looked for three particularly <strong>complex features</strong>, to ensure that we don’t bias towards single-token features, which we expect RQAE to capture well already. All features were taken from the 16k SAE with $L_0=81$:</p>
+
+<ul>
+  <li><a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/11822">Commonly used phrases</a></li>
+  <li><a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/4793">Base 64 in URLs</a></li>
+  <li><a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/8001">Negative sentiment about capability</a></li>
+</ul>
+
+<div class="row pt-3" id="fig5b">
+    <div class="col-sm mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/mapping_features-480x296.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/mapping_features-800x494.jpg" />
+    
+    <source media="(max-width: 1400px)" srcset="/assets/resized/mapping_features-1400x864.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/mapping_features.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 5b.</b> We look at the three Gemmascope features mentioned above. We then define RQAE features on their top activating examples, and look at the corresponding top activating examples of these RQAE features.
+</div>
+
+<p>Qualitatively, even for “complex” features, it seems that RQAE does a good job of representing the feature! We talk more in the <a href="#conclusion">conclusion</a> about further ideas we find interesting which stem from these results.</p>
+
+<!-- ## Feature Splitting
+
+We couldn't find any reasonable numerical representations of feature splitting. In this section, we just manually look at an example of how feature splitting is handled by Gemmascope vs RQAE:
+
+
+<div class="row pt-3">
+    <div class="col-sm mt-3 mt-md-0">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Gemma 2B 16k</th>
+                    <th>Gemma 2B 65k</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Vague descriptions of time</td>
+                    <td><a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/1677">period</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/9556">duration</a></td>
+                    <td><a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/41721">period</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/6516">duration</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/48552">lifetime</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/25825">era</a></td>
+                </tr>
+                <tr>
+                    <td>Specific measurements of time</td>
+                    <td><a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/7088">hour</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/10769">day</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/8906">week</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/3736">month</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/4618">year</a></td>
+                    <td><a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/7180">second</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/51909">minute</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/5572">hour</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/19138">day</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/43013">week</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/11592">month</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/15228">year</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/62795">decade</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/47206">century</a></td>
+                </tr>
+                <tr>
+                    <td>Time of day/week</td>
+                    <td><a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/435">night</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-16k/15895">afternoon</a></td>
+                    <td><a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/64249">night</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/50730">morning</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/32073">evening</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/17119">weekend</a>, <a href="https://www.neuronpedia.org/gemma-2-2b/12-gemmascope-res-65k/25108">dawn</a></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+<div class="caption">
+    <b>Table 1.</b> Feature Splitting on time descriptors between a 16k SAE and a 65k SAE. Features were manually found using the "nearest features by cosine similarity" list on Neuronpedia, so it likely is not exhaustive.
+</div>
+
+Let's see how RQAE handles these features. We consider the features measured by the top activating token
+
+<div class="row pt-3" id="placeholder">
+    <div class="col-sm mt-3 mt-md-0 text-center border border-4 rounded p-3" style="height: 3in;">
+        <div class="d-flex justify-content-center align-items-center h-100" >
+            <span class="fw-bolder text-danger">Show two time tokens side-by-side, and show that at higher levels, they clearly split, but at lower levels, they share largely the same tokens. Also, right under them, show the codebook indices at the lower values.</span>
+        </div>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 3c.</b> [Placeholder caption]
+</div>
+
+Generally, it seems that feature splitting works as we expect. -->
+
+<h1 id="evaluations">Evaluations</h1>
+
+<p>Evaluating interpretability methods is still an open problem. In this work, we will use Eleuther’s auto-interpretation suite<d-cite key="autointerp"></d-cite> to explain and evaluate features. We compare directly against Gemmascope SAEs for all evaluations.</p>
+
+<p>We perform all evaluations on the <code class="language-plaintext highlighter-rouge">monology/pile-uncopyrighted</code> dataset - specifically, the same subset of 36864 sequences (128 tokens each) that is also used in Neuronpedia to interpret Gemmascope SAEs. You can also see all features used, as well as the full evaluation traces, in the <a href="/root/">dashboard</a>. As a result, you can directly compare all scores, explanations, and activating examples with Gemmascope easily.</p>
+
+<p>For all evaluations, we <strong>throw out</strong> Gemmascope features without enough max-activating examples in the dataset - we do this by removing features with &lt; bos &gt; tokens as max-activating examples.</p>
+
+<h2 id="creating-a-dictionary-of-features">Creating a Dictionary of Features</h2>
+
+<p>To compare to SAEs, we need to actually define a single set of features. We have already motivated this method in the previous section, but to explicitly define how to make a dictionary of at least $k$ features using RQAE:</p>
+
+<ol>
+  <li>Begin with some test dataset of tokens. We use <code class="language-plaintext highlighter-rouge">monology/pile-uncopyrighted</code>.</li>
+  <li>Choose $k$ tokens with enough diversity from this dataset. We select uniformly from unique tokens.</li>
+  <li>Create a set of $b$ RQAE features per token by using the quantized codebooks of the layer, and then choosing $b$ subsets of layers (i.e. the first 512, the first 256, the first 128, etc.)</li>
+  <li>Optionally, filter features (we only consider layers $16$, $64$, and $256$ for evaluation).</li>
+</ol>
+
+<p>This method is a naive approach to selecting features. However, from manual inspection it does seem to find features that are (1) unique, (2) interpretable, and (3) consistent among top-activating examples. We discuss future work for selecting features in the <a href="#conclusion">conclusion</a>.</p>
+
+<h2 id="results">Results</h2>
+
+<p>There are two axes that are commonly considered to affect SAE interpretability: model width and $L_0$. We sweep across both these dimensions:</p>
+
+<div class="row pt-3" id="fig6a">
+    <div class="row mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/l0_sweep-480x238.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/l0_sweep-800x396.jpg" />
+    
+    <source media="(max-width: 1400px)" srcset="/assets/resized/l0_sweep-1400x694.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/l0_sweep.jpg" data-zoomable="" />
+</picture>
+    </div>
+    <div class="row mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/width_sweep-480x238.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/width_sweep-800x396.jpg" />
+    
+    <source media="(max-width: 1400px)" srcset="/assets/resized/width_sweep-1400x694.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/width_sweep.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 6a.</b> Evaluation sweeps across model width and $L_0$ for SAEs. When sweeping $L_0$, we fix width at $16k$. When sweeping width, we fix $L_0 \approx 80$ (closest one available in Gemmascope). All results are averaged over $100$ features. Error bars represent standard error.
+</div>
+
+<p>Across models and both axes, we see that RQAE generally outperforms SAEs in detection, and performs similarly in fuzzing. Generally, we see that more layers is better for RQAE, although this might saturate (e.g. $256$ layers performs the same as $64$ layers).</p>
+
+<h1 id="using-rqae">Using RQAE</h1>
+
+<p>We provide all <code class="language-plaintext highlighter-rouge">&lt;a href="https://www.github.com/harish-kamath/rqae"&gt;</code>code<code class="language-plaintext highlighter-rouge">&lt;/a&gt;</code> and <code class="language-plaintext highlighter-rouge">&lt;a href="https://huggingface.co/harish-kamath/rqae"&gt;</code>models<code class="language-plaintext highlighter-rouge">&lt;/a&gt;</code> for RQAE. We’d love to see more work being done, and this work only serves to introduce RQAE. We briefly show some interesting results using RQAE:</p>
+
+<h2 id="feature-visualization-dashboard">Feature Visualization Dashboard</h2>
+
+<p>Many results in this work rely on qualitative claims by looking at specific examples of features, activations, and dataset examples. We provide a hosted visualization dashboard that contains a large number of RQAE and gemmascope features, as well as all traces from evaluations, so you can easily evaluate for yourself how well RQAE works.</p>
+
+<div class="row pt-3" id="fig6a">
+    <div class="row mt-3 mt-md-0 text-center">
+        <picture>
+    
+    <source media="(max-width: 480px)" srcset="/assets/resized/dashboard-480x373.jpg" />
+    
+    <source media="(max-width: 800px)" srcset="/assets/resized/dashboard-800x621.jpg" />
+    
+    <img class="img-fluid rounded z-depth-1" src="/assets/img/rqae/dashboard.jpg" data-zoomable="" />
+</picture>
+    </div>
+</div>
+<div class="caption">
+    <b>Figure 7a.</b> An example view of the dashboard presented. See <a href="https://www.rqae.vercel.app">here</a> to try it out yourself!
+</div>
+
+<h2 id="steering">Steering</h2>
+
+<p>We show preliminary results of steering using RQAE features. We could not find evaluations to quantitatively compare steering with SAE or activation steering - so we will leave this for future work. Steering is performed by:</p>
+
+<ol>
+  <li>During generation, take the latest given LLM activation. Quantize it with RQAE into a set of codebooks.</li>
+  <li>Take the codebooks of the feature you are steering with. Turn the activation codebooks towards the feature codebooks dependent on some strength $\kappa$ and the cosine similarity between the codebook and the feature’s codebook.</li>
+  <li>Continue for all tokens during generation.</li>
+</ol>
+
+<p>Here are some qualitative examples of steering:</p>
+
+<div class="tab-container">
+    <div class="tab-buttons">
+        <button class="tab-button active" onclick="openTab(event, 'front', this.parentNode.parentNode)">Feature</button>
+        <button class="tab-button" onclick="openTab(event, 'original', this.parentNode.parentNode)">Original</button>
+        <button class="tab-button" onclick="openTab(event, 'steered', this.parentNode.parentNode)">Steered</button>
+    </div>
+    <div id="front" class="tab-content active" style="padding: 2em">
+        <div class="row">
+            <div class="col last">
+                Steering on Gemma 2 2B using the "Bodies of Water" feature. Use the tabs above to view outputs with/without steering.
+                <br />
+                <br />
+                <b>Steering parameters:</b> temperature=0.5, num_layers=5, strength=0.8, repetition_penalty=1.5
+                <br />
+                prompt="An interesting animal is the"
+            </div>
+        </div>
+    </div>
+    <div id="original" class="tab-content">
+        <div class="row">
+            <div class="col">
+            An interesting animal is the African elephant. The elephant is the largest land animal on the planet. The elephant is a large animal, but it can also be quite small. The smallest elephant is the dwarf elephant, which is only about 2 feet tall. The African elephant is the largest elephant on the planet. It can weigh up to 14,000 pounds and stand up to 13 feet tall. The elephant is an amazing animal. It is a very intelligent animal and can learn things very quickly. The elephant is also a very social animal. It lives in large herds and is very protective of its young. The elephant is also a
+            </div>
+        </div>
+        <div class="row">
+            <div class="col">
+            An interesting animal is the European rabbit, which is a symbol of the European continent. It is a member of the Leporidae family, which includes the hare and the hare. This animal is considered a wild animal, but it is a domestic animal in many countries.
+
+The European rabbit is a small animal that is not dangerous to humans. It is one of the most common animals in the world. It has many uses, including food, clothing, and shelter.
+
+The European rabbit is a small, furry animal that is native to Europe. It is also known as the European hare or the European rabbit. It is a member of the Leporidae
+
+</div>
+        </div>
+        <div class="row">
+            <div class="col">
+            An interesting animal is the <em><strong>Psammodromus sceleratus</strong></em>, a desert lizard that lives in the sand dunes of the Sahara Desert.
+
+
+      
+        
+
+
+            
+
+
+            An interesting animal is the ***Psammodromus sceleratus***, a desert lizard that lives in the sand dunes of the Sahara Desert.
+
+The `<em>`Psammodromus sceleratus`</em>` is a burrowing lizard that has a special adaptation to live in the sand dunes of the Sahara Desert.
+
+It is a nocturnal lizard that is very well camouflaged in its natural habitat, which is the sand dunes of the Sahara Desert.
+
+It is a small lizard that can reach a length of 10 cm, and it has a very interesting color pattern that allows it to blend in with the sand.
+
+</div>
+        </div>
+        <div class="row">
+            <div class="col">
+            An interesting animal is the <strong>giant earthworm</strong>.
+
+
+        
+
+
+        
+
+
+            
+
+
+            An interesting animal is the **giant earthworm**.
+
+This is a worm that can grow up to 3 meters long. It can be found in Australia, New Zealand, South America and Africa.
+
+It is a very strange looking creature. It has an elongated body, with a segmented structure. It has ten pairs of legs, which are used for locomotion.
+
+It also has a mouth, which is used for feeding. It is a scavenger, and it feeds on decaying matter.
+
+The giant earthworm is a very interesting animal. It is a great example of how evolution can create new and strange creatures.
+
+</div>
+        </div>
+        <div class="row">
+            <div class="col">
+            An interesting animal is found in the desert. It is a small, dark-colored snake with a long tail. The snake is usually found in the desert, but it can also be found in other habitats. The snake is a carnivore and feeds on small animals. The snake is also a venomous snake and can be dangerous.
+
+
+        
+
+
+        
+        
+        
+        
+  
+    
+Notice that in this case, a very low top_k is used. We have found in practice that this is dependent on the feature being steered (similar to SAEs). Generally, top_k is a coarser parameter, that you can set as the maximum value before outputs start degenerating. Then, use strength to fine-tune the strength of steering.
+
+<div class="tab-container">
+    <div class="tab-buttons">
+        <button class="tab-button active" onclick="openTab(event, 'front', this.parentNode.parentNode)">Feature</button>
+        <button class="tab-button" onclick="openTab(event, 'original', this.parentNode.parentNode)">Original</button>
+        <button class="tab-button" onclick="openTab(event, 'steered', this.parentNode.parentNode)">Steered</button>
+    </div>
+    <div id="front" class="tab-content active" style="padding: 2em">
+        <div class="row">
+            <div class="col last">
+                Steering on Gemma 2 2B using a "Compound Word with Hyphen" feature (token below). Use the tabs above to view outputs with/without steering.
+                <p style="margin: 0">... know an Anglican<b>-</b>Catholic priest...</p>
+                <br />
+                <b>Steering parameters:</b> temperature=0.5, num_layers=32, strength=0.8, repetition_penalty=1.5
+                <br />
+                prompt="An interesting thing"
+            </div>
+        </div>
+    </div>
+    <div id="original" class="tab-content">
+        <div class="row">
+            <div class="col">
+            An interesting thing happened in the last few days. I was reading a book and I came across a term that I had never heard before. I looked it up and found that it was a term that was used in the 19th century, and I found it interesting and intriguing. I was wondering if anyone else had heard of this term and what it meant.
+
+The term is called a “disjunction” and it means that something is not true. It is a term that is used in the context of a philosophy of science, and it is used to describe a situation where two things are not true.
+
+The term “disjunction”
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing happened the other day. I was in the middle of a meeting and someone asked me the question “What does your job entail?”
+
+I’ve been asked this question before, but I’ve never been able to answer it. It’s a very difficult question to answer because it doesn’t give any insight into what I do.
+
+I’ve tried to answer it before, but I’ve always felt like I was leaving something out.
+
+I’ve tried to answer it in a way that would make people think I’m doing something really important. I’ve tried to answer it in a way that would
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing happened in the first few days of the new year.
+
+I was in the middle of a very busy week, and I was so busy that I wasn’t able to sit down and watch the first few episodes of the new season of `<em>`The Mandalorian`</em>`.
+
+I’ve been a fan of the show since it first aired, and I’ve been following it closely ever since.
+
+But I was so busy that I forgot to watch the first episode of the season.
+
+I’d always been interested in the show, but I wasn’t sure if I was going to be able to watch the first episode.
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing happened in the last couple of weeks of the 2013 season. The Cubs started to play better baseball.
+
+They were winning games, they were winning series, and they were winning the division.
+
+They had a lot of things to be happy about, and they should be.
+
+They had a lot of things to be happy about, and they should be.
+
+But they also had a lot of things to be unhappy about, and they should be.
+
+This is a team that has not won a playoff game since 1945.
+
+This is a team that has not won a World Series since
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing about the `<em>`Star Wars`</em>` franchise is that it has managed to keep its fanbase engaged for over 40 years now. It’s not just the original trilogy or the prequels that have kept the audience hooked, but also the spin-offs like `<em>`Rogue One`</em>` and `<em>`The Mandalorian`</em>`.
+
+One of the most popular characters in the entire franchise is the bounty hunter Boba Fett, played by Temuera Morrison. He first appeared in `<em>`The Empire Strikes Back`</em>` and then made a comeback in `<em>`The Book of Boba Fett`</em>`.
+
+In a recent interview, Temuera Morrison talked about his experience working
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing happened to me yesterday: I got a call from a man who was very distressed.
+
+He had a 16-year-old daughter who was going through a difficult time with her boyfriend. The boyfriend was a bully. He had been harassing the girl for some time, but it was getting worse. He was threatening to kill her.
+
+The daughter was afraid to tell her parents. She was afraid of the boyfriend, and she was afraid of her parents.
+
+I had a long talk with the girl’s father, and we decided to get the police involved.
+
+The young man was arrested and charged with assault and battery
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing happened while I was researching this post. I found a lot of interesting things about the history of the term “sissy”.  I had no idea that it originated from the word “sissie”.  I also did not know that the word “sissy” has been around for a long time.  It has been around since the 1500’s, which is almost 500 years ago.
+
+The word “sissy” is used to describe someone who is feminine, weak, or cowardly.  The word is used to describe a boy or man who is effeminate.  The word has
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing about the 2020 election is that it is the first election in which the race for president is being decided by a majority of the voters.
+
+In 1960, John F. Kennedy defeated Richard Nixon by a margin of just 110,000 votes (0.2 percent) in a three-way race. In 1972, Richard Nixon defeated George McGovern by a margin of 520,000 votes (0.7 percent) in a two-way race. In 1980, Ronald Reagan defeated Jimmy Carter by a margin of
+            `</div>`
+        `</div>`
+    `</div>`
+    `<div id="steered" class="tab-content">`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing to observe about the two-volume set under review here is that, like the proverbial dove of the title, it is a rather small volume. It is a collection of essays that is as well-written and well-edited as the best-of-the-best in the genre, but it is not an academic-type-of-deal. It is not a scholarly-style-deal. It is, in a sense, an academic-style-deal, but a rather unusual one. It is a little like the 19th-century-type-of-deal of-a-man, with a-
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing to note about the late-19th century and early-twentieth-century English-language German-speaking literature is its penchant for the Latinate. The latter-day Germanophile is apt to be a bit of a snob, and the Romantic-tinged Germanophile is apt to be a bit of a snob as well (and not in the sense that one would have to be in order to be a proper Anglo-Saxon.
+            The latter is a bit of a stretch, but the former is a bit more plausible. The point is that the whole business of-a-sort of-German-with-a-
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing that happened to me came to light as a result of the recent fuss about the re-establishment of the Russian Orthodox Church in the West. The first thing that comes to mind of course is the iconoccending 19th century Russian Orthodox Church of the Russian Empire. But it is the more-or-less orthodox Greek Orthodox Orthodox Church of the 18th century of the Orthodox Church of the 19th century in the West.
+            The Orthodox Church of the 19th century in the West was the so-called autocephrite (or autoceph-something-to-something-something
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing about the English-speaking world is that it has a tendency to be rather parochial in its outlook. The British Isles has a rather narrow view of the worlda view that is in some ways a sort of a-historical a-historical, that is, in terms of the term British-ness, in the sense of the more-or-less-non-Anglo-Saxon speaking Anglo-Saxon.
+            In the case of the United States, it has been a rather long-standing tendency to be rather provincialistic. The British-ness of the American-ness is a rather recent development, and in any case the American-ness
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing about this book is its origins. The author, Richard Llew-Jones, was a man of letters and a novelist, and a man of letters does not write novels. The fact that a man of letters is a man of letters could be a matter of course, but it has been a matter of course-ness for a century. The only thing about the affair that was a bit of a surprise was the extent to which the two were conjoined.
+            The author's name was used as a pseudonym for the author of the "The Lord of the Rings" trilogy, which is to say that the author's name was used
+            `</div>`
+        `</div>`
+        `<div class="row">`
+            `<div class="col">`
+            An interesting thing about the English language is that it has been so widely used as a lingua franca of sorts for a long time, it's rather surprising how much stuff is in there in the sense that it's English-ish (and I use that term in the broadest sense possible sense sense of the word, which is to say that it's not just English-ish, but rather, a kind of English-ish in the sense that it's-ish, if you follow me-ish, you get the drift? -ishness. The point is that the language is rather, to use the technical term, a-centric
+            `</div>`
+        `</div>`
+    `</div>`
+
+</div>
+
+The above example is a more abstract feature. Note that in this case, we can increase top_k higher, without degeneration. Also, notice that even though all query tokens are the same (a hyphen), the steering feature can still be applied.
+
+Finally, let's look at how strength can affect steering.
+
+<div class="tab-container">
+    <div class="tab-buttons">
+        <button class="tab-button active" onclick="openTab(event, 'front', this.parentNode.parentNode)">Feature</button>
+        <button class="tab-button" onclick="openTab(event, 'original', this.parentNode.parentNode)">Original</button>
+        <button class="tab-button" onclick="openTab(event, 's2', this.parentNode.parentNode)">Strength=0.2</button>
+        <button class="tab-button" onclick="openTab(event, 's5', this.parentNode.parentNode)">Strength=0.5</button>
+        <button class="tab-button" onclick="openTab(event, 's7', this.parentNode.parentNode)">Strength=0.7</button>
+        <button class="tab-button" onclick="openTab(event, 's9', this.parentNode.parentNode)">Strength=0.9</button>
+    </div>
+    <div id="front" class="tab-content active" style="padding: 2em">
+        <div class="row">
+            <div class="col last">
+                Steering on Gemma 2 2B using a "Psychosis and Schizophrenia" feature (token shown below). Use the tabs above to view outputs with different values of strength.
+                <p style="margin: 0">... and not depressive <b>psychosis</b>) will...</p>
+                <br />
+                <br />
+                <b>Steering parameters:</b> temperature=0.5, num_layers=128, repetition_penalty=1.5
+                <br />
+                prompt="Let's talk about"
+            </div>
+        </div>
+    </div>
+    <div id="original" class="tab-content">
+        <div class="row">
+            <div class="col last">
+            Let's talk about the future of work and how it will affect your organization. In this session, we look at trends that are changing organizations today through an employee-centric lens to understand what employees want from their employers in a post COVID world
+            <strong>About our Speaker</strong>
+            Anant Agarwal is CEO &amp; Founder @ edX , Board Member@ MITx . An expert on online learning with 20+ years experience leading technology companies including Microsoft Research Labs; Director for Internet Services - Windows Division (1985); Executive Vice President/Chief Technology Officer – Akamai Technologies Inc.; Chairman Emeritus– University College London Institute For Learning Science( UCLILS)
+            </div>
+        </div>
+    </div>
+    <div id="s2" class="tab-content">
+        <div class="row">
+            <div class="col last">
+            Let's talk about the 10th anniversary of this beautiful, wonderful series. I know that it was not on my list but if you think carefully and deeply then maybe there is a reason why we are going to discuss today one thing in particular which has been happening since last year or so...
+            There have always been those who say "I don't like anything from Naruto" (which means Shippuden) because they were too young when all these things happened during their childhood days! It doesn't matter how old she gets; her work will never change for anyone else except herself alone forevermore without any explanation whatsoever either way around!! So let
+            </div>
+        </div>
+    </div>
+    <div id="s5" class="tab-content">
+        <div class="row">
+            <div class="col last">
+            Let's talk about the topic of today. Today we are going to be talking specifically on how you can get rid of back pain and I know that this is a subject matter where there has been so much misconception, especially in our time now because people don't understand what they should do when it comes to their body issues like for example with regards to neck pains or whatever else but let us just focus upon one aspect at hand which would definitely deal directly into your spine problems here as well if only those who suffer from them could have access towards some kind off relief through any type whatsoever then maybe things might actually work out alright without being too difficult afterwards either way
+            </div>
+        </div>
+    </div>
+    <div id="s7" class="tab-content">
+        <div class="row">
+            <div class="col last">
+            Let's talk about it.
+            I was watching the first episode of season 3 and I noticed something that really bothered me, so much in fact...that is why this theory came into my mind....
+            This thing happened at least three times throughout all episodes:
+            And then there were these moments which are also characteristic for schizophrenia (but not only):
+            The following picture shows a part with an obvious schizophrenic-like aura
+            A lot can be said here but let us come to another subject - depression! The main character has been depressed since childhood because she lost her mother when young girl during some kind of accident . And now we have what you see
+            </div>
+        </div>
+    </div>
+    <div id="s9" class="tab-content">
+        <div class="row">
+            <div class="col last">
+            Let's talk about. Now, I want to concentrate on the first part of this disorder which is called psychosis and then we will go through it all in detail now because there are some other disorders that exist like mania for example but they don’t have psychotic features associated with them so those ones would be left out here or something else might occur as well ,etc., etc.. But if you look at a person from an outside perspective without any underlying conditions such things usually happen during acute phase when someone gets affected by depression/anxiety anxiety-depression spectrum (ie depressive episodes).
+            Now let me explain what i mean before going into details . So basically these symptoms
+            </div>
+        </div>
+    </div>
+</div>
+
+# Conclusion
+
+We think that RQAE is a reasonable approach that can either complement or replace SAEs in interpreting LLMs. The performance on evaluations, as well as qualitative inspection, suggests that RQAE is *at least* as good as SAEs at finding interpretable features, and addresses the concerns of feature splitting and dark matter that, up until now, have resisted progress with standard SAEs.
+
+Furthermore, we hope that our code, model weights, and dashboard serve useful in evaluating and implementing RQAE, and we will actively be making updates to them in order to help the community adopt RQAE.
+
+## Future Work
+
+There is an incredible amount of surface area to explore with interpretability, and RQAEs. Here, we provide an ordered list of what we think is most important to validate and continue developing with RQAE:
+
+1. **Using SAE and RQAE together**: If SAEs are telescopes, then RQAEs are microscopes. However, it's clear that SAEs are still great at finding a set of interpretable features. We think that a lot of work can be done using SAEs to develop a dictionary of features, and RQAE to further refine or organize these features. Previous work <d-cite key="metasaes" /><d-cite key="decomposedarkmatter" /> have done something similar by training SAEs on the residuals of existing SAEs - we think that RQAE is a more natural approach to doing this, since we have already shown that RQAE can reconstruct features in existing SAEs.
+2. **Finding better features**: The approach presented in this work to choose features is incredibly naive. We're sure that better approaches exist, given that RQAE is so good at partitioning tokens already. One such approach would be finding diverse directions in the first four layers, and using that to choose distinct sets of tokens.
+3. **Fixing/Running More Evals**: There's a good chance that detection and fuzzing are biased towards favoring RQAE - for example, they are likely also biased towards overly specific features and explanations by definition, and we know that more levels in RQAE corresponds to ranking by cosine similarity $\implies$ overly specific features. New evals might be needed to properly evaluate this approach, although our qualitative examination give us confidence that RQAE will still be competitive.
+4. **Rethinking the Eval Dataset**: RQAE can almost completely partition all tokens in the current eval dataset of $4M$ tokens, within 4 layers. This seems to suggest that the *eval dataset* might be a bottleneck to finding more features, rather than the model itself! Since we know that RQAE has much higher capacity, we could see a shift from spending more time curating *train* datasets, to instead training on a large general dataset and spending time curating a *evaluation* dataset instead.
+
+This is certainly not an exhaustive list of ideas to try with RQAE. We're excited to see what everyone comes up with, and thank you for reading this far!
+
+<!-- Miscellaneous -->
+
+<style>
+.tab-container {
+    width: 100%;
+    margin-top: 20px;
+    border: 1px solid #ccc;
+}
+
+.tab-buttons {
+    overflow: hidden;
+    border-bottom: 1px solid #ccc;
+    background-color: #f1f1f1;
+}
+
+.tab-button {
+    background-color: inherit;
+    float: left;
+    border: none;
+    outline: none;
+    cursor: pointer;
+    padding: 14px 16px;
+    transition: 0.3s;
+}
+
+.tab-button:hover {
+    background-color: #ddd;
+}
+
+.tab-button.active {
+    background-color: #ccc;
+    border-bottom: 2px solid black;
+    outline: none;
+}
+
+.tab-content {
+    display: none;
+    padding: 6px 12px;
+    border-top: none;
+    text-align: center;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.row {
+    display: flex;
+    margin-bottom: 10px;
+}
+
+.col {
+    flex: 1;
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+}
+.col.last {
+    border: none;
+}
+</style>
+
+<script>
+function openTab(evt, tabName, container) {
+    var i, tabContent, tabButtons;
+  
+    tabContent = container.getElementsByClassName("tab-content");
+    for (i = 0; i < tabContent.length; i++) {
+        tabContent[i].style.display = "none";
+    }
+  
+    tabButtons = container.getElementsByClassName("tab-button");
+    for (i = 0; i < tabButtons.length; i++) {
+        tabButtons[i].className = tabButtons[i].className.replace(" active", "");
+    }
+  
+    container.querySelector("#" + tabName).style.display = "block";
+    evt.currentTarget.className += " active";
+}
+</script>
+&lt;/script&gt;
+</div></div></div></div>]]></content><author><name>Harish Kamath</name></author><category term="interpretability" /><summary type="html"><![CDATA[We propose a new interpretability architecture that learns a hierarchy of features in LLMs.]]></summary></entry></feed>
