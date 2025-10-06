@@ -1,10 +1,13 @@
----
-# Only the main Sass file needs front matter (the dashes are enough)
----
-@charset "utf-8";
+--- # Only the main Sass file needs front matter (the dashes are enough) --- @charset "utf-8";
 
 // Dimensions
-$max-content-width: {{ site.max_width }};
+$max-content-width: {
+    {
+    site.max_width
+  }
+}
+
+;
 
 @import "variables",
 "themes",
@@ -50,15 +53,15 @@ $max-content-width: {{ site.max_width }};
   padding: 1rem;
   // background-color: #f4f4f4;
   // box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  // transition: transform 0.2s ease, box-shadow 0.2s ease;
   // max-width: 400px;
   border-left: 4px solid var(--global-theme-color);
   padding-left: 1rem;
 }
 
 .post-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  // transform: translateY(-3px);
+  // box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
 .post-card h4 {
