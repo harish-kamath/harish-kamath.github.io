@@ -1,0 +1,40 @@
+title: Harish Kamath
+description: Harish Kamath works on interpretability of language models.
+url: https://hkamath.me
+baseurl: ""
+lang: en
+
+author:
+  name: Harish Kamath
+  email: harish.k.kamath@gmail.com
+
+social:
+  x: kamath_harish
+  github: harish-kamath
+  linkedin: harish-kamath
+  scholar: 2gZLOs8AAAAJ
+
+permalink: /blog/:year/:title/
+timezone: America/New_York
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter_opts:
+    disable: true
+
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+
+defaults:
+  - scope: { path: "", type: posts }
+    values: { layout: post }
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor
+  - .github
+  - README.md
+  - assets/bibliography

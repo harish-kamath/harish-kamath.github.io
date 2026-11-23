@@ -1,0 +1,43 @@
+---
+layout: default
+title: Harish Kamath
+---
+<div class="home">
+  <header class="profile-head">
+    <h1><b>Harish</b> Kamath</h1>
+    <p class="affil">Interpretability of language models</p>
+    <p class="links">
+      <a href="https://scholar.google.com/citations?user={{ site.social.scholar }}">Scholar</a>
+      <a href="https://github.com/{{ site.social.github }}">GitHub</a>
+      <a href="https://x.com/{{ site.social.x }}">X</a>
+      <a href="https://www.linkedin.com/in/{{ site.social.linkedin }}">LinkedIn</a>
+      <a href="mailto:{{ site.author.email }}">Email</a>
+    </p>
+  </header>
+
+
+  <section class="bio">
+    <p>Hey! I'm Harish. I work on interpretability of language models.</p>
+    <p>Previously, I worked on 3D computer vision and diffusion models at Scale AI. I graduated from Georgia Tech in 2021, with a Bachelor's degree in CS &amp; Math.</p>
+    <p>I believe that AI is the most important technology that humans will ever create. I want to spend my career understanding how it works, and making it useful for everyone.</p>
+    <p>I love talking to other people excited about their work! Please <a href="https://x.com/{{ site.social.x }}">reach out to me on X</a> if you want to chat.</p>
+  </section>
+
+  <section id="writing">
+    <h2>writing</h2>
+    <ul class="posts">
+      {% for post in site.posts %}
+      <li>
+        <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%b %-d, %Y" }}</time>
+        <div>
+          <a class="title" href="{{ post.url | relative_url }}">{{ post.title }}</a>
+          {% if post.description %}<p>{{ post.description }}</p>{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+
+  <p class="contact">DM me on <a href="https://x.com/{{ site.social.x }}">X</a>, or send me an <a href="mailto:{{ site.author.email }}">email</a>.</p>
+</div>
